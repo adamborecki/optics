@@ -1,0 +1,386 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optical Caustic Playground – v3 “Prismatic Lenses”</title>
+  <style>
+    html, body { margin:0; height:100%; background:#000; overflow:hidden;}
+    #opticsCanvas { display:block; width:100%; height:100%;}
+    .vignette {
+      position: fixed;
+      inset:0;
+      pointer-events:none;
+      background: radial-gradient(circle at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.6) 100%);
+    }
+  </style>
+
+  <!-- import map so addon modules resolve -->
+  <script type="importmap">
+  {
+    "imports":{
+      "three":"https://unpkg.com/three@0.163.0/build/three.module.js",
+      "three/examples/jsm/":"https://unpkg.com/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+</head>
+<body>
+  <canvas id="opticsCanvas"></canvas>
+  <div class="vignette"></div>
+
+  <script type="module">
+    /* ============================== CONFIG ============================== */
+    const CONFIG = {
+      baseGray: 0.1,              // «VoidDarkness»
+      exposure: 1.35,              // «RetinaBurn»
+      ringRotationSpeed: 0.26,     // «SaturnSlowDance»
+      ringThickness: 0.015,        // «HaloGirth» - Adjusted
+      dispersionStrength: 0.3,    // «RainbowSpread»
+      causticRippleSpeed: 0.01,     // «Rippletastic»
+      causticIntensity: 0.06,       // «LiquidLattice» - Adjusted
+      bloomStrength: 0.55,          // «DivineGlow» - Adjusted
+      hueShiftSpeed: 0.3,         // «PrismaticWaltz»
+      cameraDriftDuration: 8000,  // «MeditativeOrbit»
+      cameraOrbitRadius: 2.4,      // «ZenDistance» - Adjusted
+      lensRotationSpeed: 0.2      // «LensBallet»
+    };
+    /* ============================ /CONFIG ============================== */
+
+    const crystalMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        u_time: { value: 0 }
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec2 vUv;
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vPosition = vec3(modelViewMatrix * vec4(position, 1.0));
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec2 vUv;
+        uniform float u_time; // For potential future animation
+
+        // Helper function for HSL to RGB conversion (can be copied from existing rainbowMat shader)
+        float hue2rgb(float p, float q, float t){ if(t<0.0) t+=1.0; if(t>1.0) t-=1.0;
+          if(t<1.0/6.0) return p+(q-p)*6.0*t; if(t<0.5) return q;
+          if(t<2.0/3.0) return p+(q-p)*(2.0/3.0 - t)*6.0; return p;}
+
+        vec3 hsl2rgb(float h, float s, float l){
+          float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+          float p = 2.0 * l - q;
+          float r = hue2rgb(p,q,h+1.0/3.0);
+          float g = hue2rgb(p,q,h);
+          float b = hue2rgb(p,q,h-1.0/3.0);
+          return vec3(r,g,b);
+        }
+
+        void main() {
+            // Iridescence: color shifts based on view angle and normal
+            vec3 viewDir = normalize(-vPosition);
+            float dotProd = dot(viewDir, vNormal);
+            float angleFactor = pow(1.0 - abs(dotProd), 2.0); // Emphasize glancing angles
+
+            float hue = fract(vUv.x * 2.0 + vUv.y * 0.5 + u_time * 0.1); // Base hue pattern, animatable
+            hue += angleFactor * 0.3; // Shift hue more at glancing angles
+            vec3 iridescentColor = hsl2rgb(fract(hue), 0.7, 0.6);
+
+            // Fresnel effect: brighter edges
+            float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), 3.0); // Stronger Fresnel
+            vec3 fresnelColor = vec3(0.8, 0.8, 1.0) * fresnel * 2.0; // Cool white glow
+
+            // Subtle emission
+            float emissionFactor = smoothstep(0.3, 0.7, sin(vUv.y * 10.0 + u_time * 0.5) * 0.5 + 0.5);
+            vec3 emissionColor = iridescentColor * emissionFactor * 0.3; // Subtle glow from within
+
+            vec3 finalColor = iridescentColor + fresnelColor + emissionColor;
+
+            gl_FragColor = vec4(finalColor, clamp(fresnel + angleFactor + 0.3, 0.3, 0.9)); // Additive blending, ensure some opacity
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending
+    });
+
+    function createCrystalGeometry() {
+      const crystalGroup = new THREE.Group();
+      const material = crystalMaterial;
+
+      const sphere1 = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 16, 16),
+        material
+      );
+      crystalGroup.add(sphere1);
+
+      const sphere2 = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 32, 32),
+        material
+      );
+      sphere2.position.x = 0.1; // Slight offset to see overlap
+      sphere2.position.y = 0.1;
+      crystalGroup.add(sphere2);
+
+      const icosahedron = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.5, 0), // detail = 0 for angular look
+        material
+      );
+      icosahedron.position.x = -0.1; // Slight offset
+      icosahedron.position.z = 0.1;
+      crystalGroup.add(icosahedron);
+
+      return crystalGroup;
+    }
+
+    import * as THREE from 'three';
+    import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
+    import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer.js';
+    import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass.js';
+    import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import {Reflector} from 'three/examples/jsm/objects/Reflector.js';
+
+    /* ---- renderer & scene ---- */
+    const canvas = document.getElementById('opticsCanvas');
+    const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth,innerHeight);
+    renderer.toneMappingExposure = CONFIG.exposure;
+    renderer.setClearColor(new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+    camera.position.set(0, 1.2, CONFIG.cameraOrbitRadius); // Adjusted Y position
+
+    let crystal; // Declare crystal here to make it accessible in loop()
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableZoom = false;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    /* ---- Ring system ---- */
+    const ringGroup = new THREE.Group();
+    scene.add(ringGroup);
+
+    const ringGeom = new THREE.TorusGeometry(1, CONFIG.ringThickness, 48, 320);
+    const baseMatProps = {roughness:0.05, metalness:0.05, transmission:1, ior:1.45};
+
+    const coreMat = new THREE.MeshPhysicalMaterial({
+      color:0xffffff, emissive:0xffffff, emissiveIntensity:1.5, ...baseMatProps
+    });
+    const whiteRing = new THREE.Mesh(ringGeom, coreMat);
+    whiteRing.rotation.x = Math.PI/2;
+    ringGroup.add(whiteRing);
+
+    // dispersion rings
+    const colors=[0xff0000,0x00ff00,0x0000ff];
+    [-CONFIG.dispersionStrength,0,CONFIG.dispersionStrength].forEach((offset,i)=>{
+      if(offset===0) return;
+      const m=coreMat.clone(); m.emissiveIntensity=1.2;
+      m.color = new THREE.Color(colors[i]);
+      const r=new THREE.Mesh(ringGeom,m); r.rotation.x=Math.PI/2; r.scale.setScalar(1+offset);
+      ringGroup.add(r);
+    });
+
+    /* ---- Additional glass lenses (thin discs) ---- */
+    const lensGroup = new THREE.Group();
+    scene.add(lensGroup);
+
+    function makeLens(radius, thickness, colorHex){
+      const geom = new THREE.CylinderGeometry(radius, radius, thickness, 64,1,true);
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: colorHex,
+        roughness:0, metalness:0,
+        transmission:1, ior:1.52,
+        thickness:0.4,
+        envMapIntensity:1.0
+      });
+      const lens = new THREE.Mesh(geom, mat);
+      lens.rotation.x = Math.PI/2;
+      return lens;
+    }
+
+    const lens1 = makeLens(0.6, 0.04, 0xffe8c4);
+    lens1.position.set(-1.3, 0.4, 0);
+    const lens2 = makeLens(0.45, 0.035, 0xc4e8ff);
+    lens2.position.set(1.2, 0.55, 0);
+
+    lensGroup.add(lens1, lens2);
+
+    /* ---- Rainbow arc (shader gradient) ---- */
+    const rainbowGeom = new THREE.TorusGeometry(1.6, 0.025, 16, 256, Math.PI*1.3);
+    const rainbowMat = new THREE.ShaderMaterial({
+      transparent:true,
+      side:THREE.DoubleSide,
+      uniforms:{u_hue:{value:0}},
+      vertexShader:`varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+      fragmentShader:`varying vec2 vUv; uniform float u_hue;
+      float hue2rgb(float p,float q,float t){ if(t<0.0) t+=1.0; if(t>1.0) t-=1.0;
+        if(t<1.0/6.0) return p+(q-p)*6.0*t; if(t<0.5) return q;
+        if(t<2.0/3.0) return p+(q-p)*(2.0/3.0 - t)*6.0; return p;}
+      vec3 hsl2rgb(float h){ float q=1.0, p=0.0;
+        float r=hue2rgb(p,q,h+1.0/3.0);
+        float g=hue2rgb(p,q,h);
+        float b=hue2rgb(p,q,h-1.0/3.0);
+        return vec3(r,g,b);
+      }
+      void main(){
+        float h = fract(vUv.x + u_hue);
+        vec3 col = hsl2rgb(h);
+        gl_FragColor = vec4(col, 1.0);
+      }`
+    });
+    const rainbowArc = new THREE.Mesh(rainbowGeom, rainbowMat);
+    rainbowArc.rotation.x = Math.PI/2;
+    rainbowArc.position.y = 0.35;
+    scene.add(rainbowArc);
+
+    crystal = createCrystalGeometry(); // Assign to the higher-scoped variable
+    crystal.position.set(0, 0.5, 0);
+    scene.add(crystal);
+
+    /* ---- Reflective surfaces ---- */
+    const floorReflector = new Reflector(new THREE.PlaneGeometry(20,20),{
+      color: new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray),
+      textureWidth: innerWidth*devicePixelRatio,
+      textureHeight: innerHeight*devicePixelRatio
+    });
+    floorReflector.rotation.x = -Math.PI/2;
+    scene.add(floorReflector);
+
+    // vertical back mirror
+    const backMirror = new Reflector(new THREE.PlaneGeometry(20,10),{
+      color: new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray),
+      textureWidth: innerWidth*devicePixelRatio,
+      textureHeight: innerHeight*devicePixelRatio
+    });
+    backMirror.position.z = -2.5;
+    backMirror.position.y = 1.5;
+    scene.add(backMirror);
+
+    /* ---- Caustic floor shader ---- */
+    const causticUniforms = {
+      u_time:{value:0},
+      u_speed:{value:CONFIG.causticRippleSpeed},
+      u_int:{value:CONFIG.causticIntensity}
+    };
+    const causticMat = new THREE.ShaderMaterial({
+      transparent:true, uniforms:causticUniforms,
+      vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+      fragmentShader:`varying vec2 vUv; 
+    uniform float u_time;
+    uniform float u_speed;
+    uniform float u_int;
+
+    void main(){
+      float t = u_time * u_speed;
+
+      // More complex wave pattern
+      float wave1 = sin(30.0*(vUv.x + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
+      float wave2 = sin(22.0*(vUv.x*0.8 + t*0.7)) * cos(28.0*(vUv.y*1.2 + t*0.4));
+      float wave3 = cos(35.0*(vUv.x*1.1 - t*0.5)) * sin(25.0*(vUv.y*0.9 - t*0.8));
+      
+      float combined_wave = (wave1 + wave2 * 0.6 + wave3 * 0.4) / 2.0; // Normalize a bit
+
+      // Chromatic Aberration
+      float r_offset = 0.002;
+      float b_offset = -0.002;
+
+      float wave_r = sin(30.0*(vUv.x + r_offset + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
+      wave_r = (wave_r + sin(22.0*((vUv.x+r_offset)*0.8 + t*0.7)) * cos(28.0*((vUv.y)*1.2 + t*0.4)) ) / 1.5;
+
+
+      float wave_g = combined_wave; // Green channel uses the main combined wave
+
+      float wave_b = sin(30.0*(vUv.x + b_offset + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
+      wave_b = (wave_b + cos(35.0*((vUv.x+b_offset)*1.1 - t*0.5)) * sin(25.0*((vUv.y)*0.9 - t*0.8)) ) / 1.5;
+
+      float c_r = smoothstep(0.3, 0.55, wave_r) * u_int;
+      float c_g = smoothstep(0.3, 0.55, wave_g) * u_int;
+      float c_b = smoothstep(0.3, 0.55, wave_b) * u_int;
+
+      // Ensure intensity isn't overly blown out by individual channel strengths
+      vec3 color = vec3(c_r, c_g, c_b);
+      float alpha = smoothstep(0.1, 0.6, (c_r+c_g+c_b)/3.0); // Alpha based on average intensity
+
+      gl_FragColor = vec4(color, alpha);
+    }`
+    });
+    const causticPlane = new THREE.Mesh(new THREE.PlaneGeometry(4,4), causticMat);
+    causticPlane.rotation.x = -Math.PI/2;
+    causticPlane.position.y = 0.02; // a bit above reflector
+    scene.add(causticPlane);
+
+    /* ---- Lighting ---- */
+    const spot = new THREE.SpotLight(0xffffff, 4, 0, Math.PI/5, 0.4);
+    spot.position.set(0,3,2);
+    scene.add(spot, spot.target);
+
+    /* ---- Post-processing ---- */
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), CONFIG.bloomStrength, 0.4, 0.85));
+
+    /* ---- cam & animation ---- */
+    anime({
+      targets: camera.position,
+      x: CONFIG.cameraOrbitRadius*Math.sin(Math.PI/5),
+      z: CONFIG.cameraOrbitRadius*Math.cos(Math.PI/5),
+      duration: CONFIG.cameraDriftDuration,
+      easing:'easeInOutSine',
+      direction:'alternate',
+      loop:true
+    });
+
+    /* ---- loop ---- */
+    const clock=new THREE.Clock();
+    function loop(){
+      requestAnimationFrame(loop);
+      const dt=clock.getDelta(), t=clock.elapsedTime;
+
+      ringGroup.rotation.z += CONFIG.ringRotationSpeed*dt;
+      lensGroup.rotation.z += CONFIG.lensRotationSpeed*dt;
+
+      // hue drift on dispersion rings
+      ringGroup.children.forEach(m=>{
+        const hsl={}; m.material.color.getHSL(hsl);
+        hsl.h=(hsl.h+CONFIG.hueShiftSpeed*dt)%1; m.material.color.setHSL(hsl.h,hsl.s,hsl.l);
+      });
+
+      rainbowMat.uniforms.u_hue.value = (t*0.05)%1;
+
+      causticUniforms.u_time.value = t;
+      crystalMaterial.uniforms.u_time.value = t;
+
+      if (crystal) { // Check if crystal exists
+          crystal.rotation.y += 0.005; // Adjust speed as needed
+          crystal.rotation.x += 0.001; // Slower rotation on x-axis
+      }
+
+      spot.position.x = Math.sin(t*0.25)*1.3;
+      spot.position.z = 1.8 + Math.cos(t*0.21)*1.3;
+
+      controls.update();
+      composer.render();
+    }
+    loop();
+
+    /* ---- resize ---- */
+    addEventListener('resize',()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight);
+      composer.setSize(innerWidth,innerHeight);
+    });
+  </script>
+</body>
+</html>
