@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optics Demo v6</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    /* Vignette overlay */
+    #vignette {
+      pointer-events: none;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle at center,
+        transparent 50%,
+        rgba(0,0,0,0.7) 100%);
+    }
+  </style>
+  <!-- Import map for ES modules -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
+      "three/examples/jsm/controls/OrbitControls.js": "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="vignette"></div>
+  <!-- Anime.js for hue shift animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+  <!-- Main module -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+    // CONFIGURATION
+    const CONFIG = {
+      rotationSpeed: 0.1,     // spinnyMcSpin
+      causticsIntensity: 2.0, // glowGlowBaby
+      reflectivity: 0.8,      // mirrorMirror
+      hueShiftSpeed: 10       // discoLight
+    };
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 5);
+    camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Orbit controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // Light
+    const light = new THREE.PointLight(0xffffff, 1);
+    light.position.set(5, 5, 5);
+    scene.add(light);
+    // Ambient light for subtle illumination
+    const ambient = new THREE.AmbientLight(0xffffff, 0.2);
+    scene.add(ambient);
+
+    // Base lens material
+    const baseMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0,
+      roughness: 0,
+      transmission: 1,
+      thickness: 0.5,
+      ior: 1.5,
+      transparent: true
+    });
+
+    // Function to create lenses
+    function makeLens(scale, position) {
+      const geo = new THREE.CylinderGeometry(1, 1, 0.2, 64);
+      const mesh = new THREE.Mesh(geo, baseMat.clone());
+      mesh.scale.set(scale, scale, 1);
+      mesh.rotation.x = Math.PI/2;
+      mesh.position.set(...position);
+      scene.add(mesh);
+      return mesh;
+    }
+
+    // Create lenses and prism
+    const lenses = [
+      makeLens(1, [0,0,0]),
+      makeLens(0.8, [-2,0,0]),
+      makeLens(1.2, [2,0,0]),
+      makeLens(0.5, [0,0,2.5])
+    ];
+    const prismGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 3);
+    const prism = new THREE.Mesh(prismGeo, baseMat.clone());
+    prism.rotation.x = Math.PI/2;
+    prism.position.set(0,0,-2.5);
+    scene.add(prism);
+
+    // Caustics plane shader
+    const planeGeo = new THREE.PlaneGeometry(10,10,64,64);
+    const planeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        lightPos: { value: light.position },
+        intensity: { value: CONFIG.causticsIntensity },
+        time: { value: 0 },
+        lightColor: { value: new THREE.Vector3(1,1,1) }
+      },
+      vertexShader: `
+        varying vec3 vPos;
+        void main() {
+          vPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 lightPos;
+        uniform float intensity;
+        uniform float time;
+        uniform vec3 lightColor;
+        varying vec3 vPos;
+        void main() {
+          float d = length(vPos.xz - lightPos.xz);
+          float pattern = sin((d - time)*10.0);
+          float caust = smoothstep(0.0,1.0,pattern)*intensity;
+          vec3 col = lightColor * caust;
+          gl_FragColor = vec4(col,1.0);
+        }
+      `
+    });
+    const plane = new THREE.Mesh(planeGeo, planeMat);
+    plane.rotation.x = -Math.PI/2;
+    scene.add(plane);
+
+    // Reflective ground
+    const mirrorGeo = new THREE.PlaneGeometry(10,10);
+    const mirrorMat = new THREE.MeshPhysicalMaterial({
+      color: 0x111111,
+      metalness: 1,
+      roughness: 0,
+      reflectivity: CONFIG.reflectivity
+    });
+    const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
+    mirror.rotation.x = -Math.PI/2;
+    mirror.position.y = -0.01;
+    scene.add(mirror);
+
+    // Animation loop
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      lenses.forEach(l => l.rotation.z = t*CONFIG.rotationSpeed);
+      prism.rotation.z = t*CONFIG.rotationSpeed;
+      planeMat.uniforms.time.value = t;
+      planeMat.uniforms.lightColor.value.copy(light.color);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Hue shift animation
+    anime({
+      targets: light.color,
+      r: [1,1,0.5],
+      g: [1,0.5,1],
+      b: [1,0.2,0.7],
+      duration: CONFIG.hueShiftSpeed*1000,
+      easing: 'linear',
+      loop: true
+    });
+
+    // Handle resizing
+    window.addEventListener('resize', ()=> {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

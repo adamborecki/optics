@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optics Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    /* Vignette overlay */
+    #vignette {
+      pointer-events: none;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle at center,
+        transparent 50%,
+        rgba(0,0,0,0.7) 100%);
+    }
+  </style>
+</head>
+<body>
+  <div id="vignette"></div>
+  <!-- Three.js and Anime.js from CDN -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+  <script>
+    /********************
+     * CONFIGURATION
+     ********************/
+    const CONFIG = {
+      rotationSpeed: 0.1,   // technical: lens rotation speed (rad/sec)
+                           // fun: spinnyMcSpin
+      dispersionStrength: 0.02, // technical: refractive index delta for RGB
+                                // fun: rainbowSplitz
+      causticsIntensity: 2.0,   // technical: brightness multiplier of caustics
+                                // fun: glowGlowBaby
+      reflectivity: 0.8,         // technical: ground plane reflectiveness
+                                // fun: mirrorMirror
+      vignetteStrength: 0.7,     // technical: vignette darkness (0-1)
+                                // fun: tunnelVision
+      hueShiftSpeed: 10          // technical: hue cycle duration (sec)
+                                // fun: discoLight
+    };
+
+    // Apply vignette strength
+    document.getElementById('vignette').style.background =
+      `radial-gradient(circle at center, transparent 50%, rgba(0,0,0,${CONFIG.vignetteStrength}) 100%)`;
+
+    /********************
+     * SCENE SETUP
+     ********************/
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    /********************
+     * LIGHT
+     ********************/
+    const light = new THREE.PointLight(0xffffff, 1);
+    light.position.set(5, 5, 5);
+    scene.add(light);
+
+    /********************
+     * LENS (Cylinder)
+     ********************/
+    const lensGeo = new THREE.CylinderGeometry(1, 1, 0.2, 64);
+    const lensMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0,
+      roughness: 0,
+      transmission: 1,
+      thickness: 0.5,
+      ior: 1.5,
+      transparent: true
+    });
+    const lens = new THREE.Mesh(lensGeo, lensMat);
+    lens.rotation.x = Math.PI / 2;
+    scene.add(lens);
+
+    /********************
+     * CAUSTICS PLANE
+     ********************/
+    const planeGeo = new THREE.PlaneGeometry(10, 10, 64, 64);
+    const planeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        lightPos: { value: light.position },
+        intensity: { value: CONFIG.causticsIntensity },
+        time: { value: 0 },
+        lightColor: { value: new THREE.Vector3(light.color.r, light.color.g, light.color.b) }
+      },
+        lightPos: { value: light.position },
+        intensity: { value: CONFIG.causticsIntensity },
+        time: { value: 0 }
+      },
+      vertexShader: `
+        varying vec3 vPos;
+        void main() {
+          vPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 lightPos;
+        uniform vec3 lightColor;
+        uniform float intensity;
+        uniform float time;
+        varying vec3 vPos;
+        void main() {
+          float d = length(vPos.xz - lightPos.xz);
+          float pattern = sin((d - time) * 10.0);
+          float caust = smoothstep(0.0, 1.0, pattern) * intensity;
+          vec3 col = lightColor * caust;
+          gl_FragColor = vec4(col, 1.0);
+        }
+
+          float pattern = sin((d - time) * 10.0);
+          float caust = smoothstep(0.0, 1.0, pattern) * intensity;
+          gl_FragColor = vec4(vec3(caust), 1.0);
+        }
+      `
+    });
+    const plane = new THREE.Mesh(planeGeo, planeMat);
+    plane.rotation.x = -Math.PI / 2;
+    scene.add(plane);
+    /********************
+     * EXTRA LENSES & PRISM
+     ********************/
+    // Clone cylinder lens 3 times with varying sizes and positions
+    [ {scale:0.8, pos:[-2,0,0]}, {scale:1.2, pos:[2,0,0]}, {scale:0.5, pos:[0,0,2.5]} ].forEach(cfg => {
+      const l = lens.clone();
+      l.scale.set(cfg.scale, cfg.scale, 1);
+      l.position.set(...cfg.pos);
+      scene.add(l);
+    });
+    // Add a triangular prism lens
+    const prismGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 3);
+    const prismMat = lensMat.clone();
+    const prism = new THREE.Mesh(prismGeo, prismMat);
+    prism.rotation.x = Math.PI / 2;
+    prism.position.set(0, 0, -2.5);
+    scene.add(prism);
+
+    /********************
+     * REFLECTIVE GROUND
+     ********************/
+    const mirrorGeo = new THREE.PlaneGeometry(10, 10, 1, 1);
+    const mirrorMat = new THREE.MeshPhysicalMaterial({
+      color: 0x111111,
+      metalness: 1,
+      roughness: 0,
+      reflectivity: CONFIG.reflectivity
+    });
+    const mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
+    mirror.rotation.x = -Math.PI/2;
+    mirror.position.y = -0.01;
+    scene.add(mirror);
+
+
+        /********************
+     * ORBIT CONTROLS
+     ********************/
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    /********************
+     * ANIMATION LOOP
+     ********************/
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      lens.rotation.z = t * CONFIG.rotationSpeed;
+      planeMat.uniforms.time.value = t;
+      planeMat.uniforms.lightColor.value.copy(light.color);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    /********************
+     * HUE-SHIFT ANIMATION
+     ********************/
+    anime({
+      targets: light.color,
+      r: [1, 1, 0.5],
+      g: [1, 0.5, 1],
+      b: [1, 0.2, 0.7],
+      duration: CONFIG.hueShiftSpeed * 1000,
+      easing: 'linear',
+      loop: true
+    });
+
+    /********************
+     * RESIZE HANDLER
+     ********************/
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

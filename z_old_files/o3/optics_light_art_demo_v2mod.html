@@ -1,0 +1,191 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optical Caustic Playground – v2</title>
+  <style>
+    html, body { margin:0; height:100%; background:#000; overflow:hidden;}
+    #opticsCanvas { display:block; width:100%; height:100%;}
+    .vignette {
+      position: fixed;
+      pointer-events:none;
+      inset:0;
+      background: radial-gradient(circle at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.65) 100%);
+    }
+  </style>
+
+  <!-- Import map so the example add‑ons can resolve the "three" specifier -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
+      "three/examples/jsm/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Anime.js for tweens -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+</head>
+<body>
+  <canvas id="opticsCanvas"></canvas>
+  <div class="vignette"></div>
+
+  <script type="module">
+    /************  CONFIG BLOCK  ************/
+    const CONFIG = {
+      baseGray: 0.07,              // «VoidDarkness»
+      exposure: 1,               // «RetinaBurn»
+      ringRotationSpeed: 0.1,     // «SaturnSlowDance»
+      ringThickness: 0.015,        // «HaloGirth»
+      dispersionStrength: 4,    // «RainbowSpread»
+      causticRippleSpeed: 0.35,    // «Rippletastic»
+      causticIntensity: 0.8,       // «LiquidLattice»
+      bloomStrength: 1.4,          // «DivineGlow»
+      hueShiftSpeed: 0.02,         // «PrismaticWaltz»
+      cameraDriftDuration: 45,  // «MeditativeOrbit»
+      cameraOrbitRadius: 2,        // «ZenDistance»
+      lightTiltAmplitude: 2       // «SunSwing»
+    };
+    /*********  END CONFIG BLOCK  ***********/
+
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
+
+    /* ---- renderer & scene ---- */
+    const canvas = document.getElementById('opticsCanvas');
+    const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setClearColor(new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray));
+    renderer.toneMappingExposure = CONFIG.exposure;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+    camera.position.set(0, 1.5, CONFIG.cameraOrbitRadius);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enableZoom = false;
+    controls.dampingFactor = 0.05;
+
+    /* ---- ring group ---- */
+    const ringGroup = new THREE.Group();
+    scene.add(ringGroup);
+
+    const ringGeom = new THREE.TorusGeometry(1, CONFIG.ringThickness, 32, 256);
+    const baseMatProps = { roughness:0.05, metalness:0.1, transmission:1, ior:1.4 };
+
+    // white core ring
+    const coreMat = new THREE.MeshPhysicalMaterial({color:0xffffff, ...baseMatProps});
+    const coreRing = new THREE.Mesh(ringGeom, coreMat);
+    coreRing.rotation.x = Math.PI/2;
+    ringGroup.add(coreRing);
+
+    // RGB dispersion shells
+    const colors = [0xff0000, 0x00ff00, 0x0000ff];
+    [-CONFIG.dispersionStrength, 0, CONFIG.dispersionStrength].forEach((offset, i)=>{
+      if(offset===0) return;
+      const m = coreMat.clone();
+      m.color = new THREE.Color(colors[i]);
+      const r = new THREE.Mesh(ringGeom, m);
+      r.rotation.x = Math.PI/2;
+      r.scale.setScalar(1+offset);
+      ringGroup.add(r);
+    });
+
+    /* ---- reflective floor ---- */
+    const reflector = new Reflector(new THREE.PlaneGeometry(20,20), {
+      color:new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray),
+      textureWidth: innerWidth*devicePixelRatio,
+      textureHeight: innerHeight*devicePixelRatio
+    });
+    reflector.rotation.x = -Math.PI/2;
+    scene.add(reflector);
+
+    /* ---- caustic shader ---- */
+    const causticUniforms = {
+      u_time:{value:0},
+      u_speed:{value:CONFIG.causticRippleSpeed},
+      u_intensity:{value:CONFIG.causticIntensity}
+    };
+    const causticMat = new THREE.ShaderMaterial({
+      transparent:true,
+      uniforms:causticUniforms,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec2 vUv;
+        uniform float u_time, u_speed, u_intensity;
+        void main(){
+          float t = u_time*u_speed;
+          float wave = sin(20.0*(vUv.x+t))*sin(25.0*(vUv.y+t*0.8));
+          float c = smoothstep(0.35,0.45,wave)*u_intensity;
+          gl_FragColor = vec4(vec3(c), c);
+        }
+      `
+    });
+    const causticPlane = new THREE.Mesh(new THREE.PlaneGeometry(4,4), causticMat);
+    causticPlane.rotation.x = -Math.PI/2;
+    causticPlane.position.y = 0.01;
+    scene.add(causticPlane);
+
+    /* ---- light ---- */
+    const spot = new THREE.SpotLight(0xffffff, 3, 0, Math.PI/6, 0.5);
+    spot.position.set(0,3,2);
+    scene.add(spot, spot.target);
+
+    /* ---- post-processing ---- */
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), CONFIG.bloomStrength, 0.4,0.85));
+
+    /* ---- anime camera drift ---- */
+    anime({
+      targets: camera.position,
+      x: CONFIG.cameraOrbitRadius*Math.sin(Math.PI/6),
+      z: CONFIG.cameraOrbitRadius*Math.cos(Math.PI/6),
+      duration: CONFIG.cameraDriftDuration,
+      easing:'easeInOutSine',
+      direction:'alternate',
+      loop:true
+    });
+
+    /* ---- loop ---- */
+    const clock = new THREE.Clock();
+    function loop(){
+      requestAnimationFrame(loop);
+      const dt = clock.getDelta(), t = clock.elapsedTime;
+
+      ringGroup.rotation.z += CONFIG.ringRotationSpeed*dt;
+
+      ringGroup.children.forEach(m=>{
+        const hsl={}; m.material.color.getHSL(hsl);
+        hsl.h=(hsl.h+CONFIG.hueShiftSpeed*dt)%1; m.material.color.setHSL(hsl.h,hsl.s,hsl.l);
+      });
+
+      causticUniforms.u_time.value = t;
+      spot.position.x = Math.sin(t*0.25)*1.5;
+      spot.position.z = 2+Math.cos(t*0.18)*1.5;
+
+      controls.update();
+      composer.render();
+    }
+    loop();
+
+    /* ---- resize ---- */
+    addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight);
+      composer.setSize(innerWidth,innerHeight);
+    });
+  </script>
+</body>
+</html>
