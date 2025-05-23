@@ -37,108 +37,17 @@
       baseGray: 0.1,              // «VoidDarkness»
       exposure: 1.35,              // «RetinaBurn»
       ringRotationSpeed: 0.26,     // «SaturnSlowDance»
-      ringThickness: 0.015,        // «HaloGirth» - Adjusted
+      ringThickness: 0.02,         // «HaloGirth»
       dispersionStrength: 0.3,    // «RainbowSpread»
       causticRippleSpeed: 0.01,     // «Rippletastic»
-      causticIntensity: 0.06,       // «LiquidLattice» - Adjusted
-      bloomStrength: 0.55,          // «DivineGlow» - Adjusted
+      causticIntensity: 0.05,       // «LiquidLattice»
+      bloomStrength: 0.48,          // «DivineGlow»
       hueShiftSpeed: 0.3,         // «PrismaticWaltz»
       cameraDriftDuration: 8000,  // «MeditativeOrbit»
-      cameraOrbitRadius: 2.4,      // «ZenDistance» - Adjusted
+      cameraOrbitRadius: 2.2,      // «ZenDistance»
       lensRotationSpeed: 0.2      // «LensBallet»
     };
     /* ============================ /CONFIG ============================== */
-
-    const crystalMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        u_time: { value: 0 }
-      },
-      vertexShader: `
-        varying vec3 vNormal;
-        varying vec3 vPosition;
-        varying vec2 vUv;
-        void main() {
-            vNormal = normalize(normalMatrix * normal);
-            vPosition = vec3(modelViewMatrix * vec4(position, 1.0));
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        varying vec3 vPosition;
-        varying vec2 vUv;
-        uniform float u_time; // For potential future animation
-
-        // Helper function for HSL to RGB conversion (can be copied from existing rainbowMat shader)
-        float hue2rgb(float p, float q, float t){ if(t<0.0) t+=1.0; if(t>1.0) t-=1.0;
-          if(t<1.0/6.0) return p+(q-p)*6.0*t; if(t<0.5) return q;
-          if(t<2.0/3.0) return p+(q-p)*(2.0/3.0 - t)*6.0; return p;}
-
-        vec3 hsl2rgb(float h, float s, float l){
-          float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
-          float p = 2.0 * l - q;
-          float r = hue2rgb(p,q,h+1.0/3.0);
-          float g = hue2rgb(p,q,h);
-          float b = hue2rgb(p,q,h-1.0/3.0);
-          return vec3(r,g,b);
-        }
-
-        void main() {
-            // Iridescence: color shifts based on view angle and normal
-            vec3 viewDir = normalize(-vPosition);
-            float dotProd = dot(viewDir, vNormal);
-            float angleFactor = pow(1.0 - abs(dotProd), 2.0); // Emphasize glancing angles
-
-            float hue = fract(vUv.x * 2.0 + vUv.y * 0.5 + u_time * 0.1); // Base hue pattern, animatable
-            hue += angleFactor * 0.3; // Shift hue more at glancing angles
-            vec3 iridescentColor = hsl2rgb(fract(hue), 0.7, 0.6);
-
-            // Fresnel effect: brighter edges
-            float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), 3.0); // Stronger Fresnel
-            vec3 fresnelColor = vec3(0.8, 0.8, 1.0) * fresnel * 2.0; // Cool white glow
-
-            // Subtle emission
-            float emissionFactor = smoothstep(0.3, 0.7, sin(vUv.y * 10.0 + u_time * 0.5) * 0.5 + 0.5);
-            vec3 emissionColor = iridescentColor * emissionFactor * 0.3; // Subtle glow from within
-
-            vec3 finalColor = iridescentColor + fresnelColor + emissionColor;
-
-            gl_FragColor = vec4(finalColor, clamp(fresnel + angleFactor + 0.3, 0.3, 0.9)); // Additive blending, ensure some opacity
-        }
-      `,
-      transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-
-    function createCrystalGeometry() {
-      const crystalGroup = new THREE.Group();
-      const material = crystalMaterial;
-
-      const sphere1 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.4, 16, 16),
-        material
-      );
-      crystalGroup.add(sphere1);
-
-      const sphere2 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.45, 32, 32),
-        material
-      );
-      sphere2.position.x = 0.1; // Slight offset to see overlap
-      sphere2.position.y = 0.1;
-      crystalGroup.add(sphere2);
-
-      const icosahedron = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(0.5, 0), // detail = 0 for angular look
-        material
-      );
-      icosahedron.position.x = -0.1; // Slight offset
-      icosahedron.position.z = 0.1;
-      crystalGroup.add(icosahedron);
-
-      return crystalGroup;
-    }
 
     import * as THREE from 'three';
     import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
@@ -157,9 +66,7 @@
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-    camera.position.set(0, 1.2, CONFIG.cameraOrbitRadius); // Adjusted Y position
-
-    let crystal; // Declare crystal here to make it accessible in loop()
+    camera.position.set(0,1.5, CONFIG.cameraOrbitRadius);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableZoom = false;
@@ -244,10 +151,6 @@
     rainbowArc.position.y = 0.35;
     scene.add(rainbowArc);
 
-    crystal = createCrystalGeometry(); // Assign to the higher-scoped variable
-    crystal.position.set(0, 0.5, 0);
-    scene.add(crystal);
-
     /* ---- Reflective surfaces ---- */
     const floorReflector = new Reflector(new THREE.PlaneGeometry(20,20),{
       color: new THREE.Color(CONFIG.baseGray, CONFIG.baseGray, CONFIG.baseGray),
@@ -276,44 +179,13 @@
     const causticMat = new THREE.ShaderMaterial({
       transparent:true, uniforms:causticUniforms,
       vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-      fragmentShader:`varying vec2 vUv; 
-    uniform float u_time;
-    uniform float u_speed;
-    uniform float u_int;
-
-    void main(){
-      float t = u_time * u_speed;
-
-      // More complex wave pattern
-      float wave1 = sin(30.0*(vUv.x + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
-      float wave2 = sin(22.0*(vUv.x*0.8 + t*0.7)) * cos(28.0*(vUv.y*1.2 + t*0.4));
-      float wave3 = cos(35.0*(vUv.x*1.1 - t*0.5)) * sin(25.0*(vUv.y*0.9 - t*0.8));
-      
-      float combined_wave = (wave1 + wave2 * 0.6 + wave3 * 0.4) / 2.0; // Normalize a bit
-
-      // Chromatic Aberration
-      float r_offset = 0.002;
-      float b_offset = -0.002;
-
-      float wave_r = sin(30.0*(vUv.x + r_offset + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
-      wave_r = (wave_r + sin(22.0*((vUv.x+r_offset)*0.8 + t*0.7)) * cos(28.0*((vUv.y)*1.2 + t*0.4)) ) / 1.5;
-
-
-      float wave_g = combined_wave; // Green channel uses the main combined wave
-
-      float wave_b = sin(30.0*(vUv.x + b_offset + t*1.0)) * sin(34.0*(vUv.y + t*0.6));
-      wave_b = (wave_b + cos(35.0*((vUv.x+b_offset)*1.1 - t*0.5)) * sin(25.0*((vUv.y)*0.9 - t*0.8)) ) / 1.5;
-
-      float c_r = smoothstep(0.3, 0.55, wave_r) * u_int;
-      float c_g = smoothstep(0.3, 0.55, wave_g) * u_int;
-      float c_b = smoothstep(0.3, 0.55, wave_b) * u_int;
-
-      // Ensure intensity isn't overly blown out by individual channel strengths
-      vec3 color = vec3(c_r, c_g, c_b);
-      float alpha = smoothstep(0.1, 0.6, (c_r+c_g+c_b)/3.0); // Alpha based on average intensity
-
-      gl_FragColor = vec4(color, alpha);
-    }`
+      fragmentShader:`varying vec2 vUv; uniform float u_time,u_speed,u_int;
+      void main(){
+        float t=u_time*u_speed;
+        float wave=sin(30.0*(vUv.x+t))*sin(34.0*(vUv.y+t*0.6));
+        float c=smoothstep(0.3,0.45,wave)*u_int;
+        gl_FragColor=vec4(vec3(c), c);
+      }`
     });
     const causticPlane = new THREE.Mesh(new THREE.PlaneGeometry(4,4), causticMat);
     causticPlane.rotation.x = -Math.PI/2;
@@ -359,12 +231,6 @@
       rainbowMat.uniforms.u_hue.value = (t*0.05)%1;
 
       causticUniforms.u_time.value = t;
-      crystalMaterial.uniforms.u_time.value = t;
-
-      if (crystal) { // Check if crystal exists
-          crystal.rotation.y += 0.005; // Adjust speed as needed
-          crystal.rotation.x += 0.001; // Slower rotation on x-axis
-      }
 
       spot.position.x = Math.sin(t*0.25)*1.3;
       spot.position.z = 1.8 + Math.cos(t*0.21)*1.3;
