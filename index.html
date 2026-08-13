@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#101825" />
+  <meta
+    name="description"
+    content="A visual webapp inspired by the optics in Olafur Eliasson's 'Pluriverse assembly' — prismatic lenses, caustics, and light."
+  />
+  <title>Optics — Optical Caustic Playground</title>
+
+  <style>
+    :root{
+      --bg0:#101825;
+      --bg1:#162131;
+      --ink:#f5efe6;
+      --muted:rgba(245,239,230,.72);
+      --muted-2:rgba(245,239,230,.54);
+      --panel:rgba(255,255,255,.07);
+      --stroke:rgba(255,255,255,.14);
+      --stroke-2:rgba(255,255,255,.10);
+      --accent:#ff8a3d;
+      --accent-2:#5dd2ff;
+      --accent-3:#fff0b3;
+      --shadow:0 24px 64px rgba(0,0,0,.33);
+      --radius-lg:24px;
+      --radius-md:18px;
+      --radius-sm:12px;
+      --sans:"Avenir Next","Trebuchet MS","Helvetica Neue","Segoe UI",sans-serif;
+      --display:"Avenir Next Condensed","Trebuchet MS","Gill Sans","Segoe UI",sans-serif;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    }
+
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg0:#f7f3eb;
+        --bg1:#ebe4d8;
+        --ink:#1a2230;
+        --muted:rgba(26,34,48,.72);
+        --muted-2:rgba(26,34,48,.56);
+        --panel:rgba(255,255,255,.58);
+        --stroke:rgba(26,34,48,.12);
+        --stroke-2:rgba(26,34,48,.09);
+        --shadow:0 22px 54px rgba(68,49,24,.12);
+      }
+    }
+
+    *{ box-sizing:border-box }
+    html,body{ min-height:100% }
+    body{
+      margin:0;
+      color:var(--ink);
+      font-family:var(--sans);
+      background:
+        radial-gradient(1100px 620px at 20% -10%, rgba(255,138,61,.18), transparent 60%),
+        radial-gradient(900px 520px at 100% 0%, rgba(93,210,255,.16), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      background-attachment: fixed;
+      line-height:1.5;
+    }
+
+    main{
+      max-width:880px;
+      margin:0 auto;
+      padding:64px 20px 80px;
+    }
+
+    .eyebrow{
+      font-family:var(--mono);
+      font-size:.8rem;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      color:var(--muted-2);
+      margin:0 0 10px;
+    }
+
+    h1{
+      font-family:var(--display);
+      font-size:clamp(2rem, 5vw, 2.9rem);
+      line-height:1.05;
+      margin:0 0 14px;
+    }
+
+    .lede{
+      color:var(--muted);
+      font-size:1.05rem;
+      max-width:60ch;
+      margin:0 0 40px;
+    }
+
+    .stage{
+      position:relative;
+      border-radius:var(--radius-lg);
+      overflow:hidden;
+      border:1px solid var(--stroke);
+      box-shadow:var(--shadow);
+      background:#000;
+      aspect-ratio:16/10;
+      margin-bottom:16px;
+    }
+
+    .stage a.launch{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+      background:radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,.35) 100%);
+    }
+
+    .stage .play{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:14px 26px;
+      border-radius:999px;
+      background:var(--ink);
+      color:var(--bg0);
+      font-weight:600;
+      font-size:1.05rem;
+      box-shadow:0 12px 30px rgba(0,0,0,.4);
+      transition:transform .15s ease;
+    }
+    .stage a.launch:hover .play{ transform:scale(1.04) }
+
+    .caption{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom:48px;
+    }
+    .caption .tag{
+      font-family:var(--mono);
+      font-size:.78rem;
+      color:var(--accent-2);
+      letter-spacing:.06em;
+    }
+    .caption p{
+      margin:0;
+      color:var(--muted-2);
+      font-size:.88rem;
+    }
+
+    .section-head h2{
+      font-family:var(--display);
+      font-size:1.3rem;
+      margin:0 0 8px;
+    }
+    .section-head p{
+      color:var(--muted);
+      margin:0 0 22px;
+      max-width:62ch;
+    }
+
+    .versions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+    }
+
+    .versions a{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:10px 16px;
+      border-radius:999px;
+      border:1px solid var(--stroke);
+      color:var(--ink);
+      text-decoration:none;
+      font-size:.92rem;
+      background:var(--panel);
+      transition:transform .15s ease, opacity .15s ease;
+    }
+    .versions a:hover{ transform:translateY(-1px); opacity:.85 }
+    .versions a .v{
+      font-family:var(--mono);
+      color:var(--muted-2);
+      font-size:.8rem;
+    }
+
+    footer{
+      margin-top:56px;
+      padding-top:20px;
+      border-top:1px solid var(--stroke-2);
+      color:var(--muted-2);
+      font-size:.85rem;
+    }
+    footer a{ color:inherit }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Visual experiment</p>
+    <h1>Optics</h1>
+    <p class="lede">
+      A visual webapp inspired by the optics in Olafur Eliasson's <em>"Pluriverse assembly"</em> —
+      prismatic lenses, caustics, and drifting light, rendered in real time with Three.js.
+    </p>
+
+    <div class="stage">
+      <a class="launch" href="opticsV4.html">
+        <span class="play">▶ Launch v4 — Prismatic Lenses</span>
+      </a>
+    </div>
+    <div class="caption">
+      <span class="tag">CURRENT VERSION</span>
+      <p>Runs full-screen. Give it a moment to load the Three.js scene.</p>
+    </div>
+
+    <div class="section-head">
+      <h2>Earlier versions</h2>
+      <p>Optics grew through a few passes — kept here if you want to see how the light and lens work evolved.</p>
+    </div>
+    <div class="versions">
+      <a href="opticsV1.html"><span class="v">v1</span> Optics Demo</a>
+      <a href="opticsV2.html"><span class="v">v2</span> Optical Caustic Playground</a>
+      <a href="opticsV3.html"><span class="v">v3</span> Prismatic Lenses</a>
+    </div>
+
+    <footer>
+      Part of <a href="https://adamborecki.github.io/webapps/">Adam Borecki's web apps</a>.
+    </footer>
+  </main>
+</body>
+</html>
